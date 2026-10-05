@@ -72,6 +72,45 @@ def main():
     else:
         print("Status                  : Ditemukan duplikasi comment_id")
 
+    # Detail duplicate comment_id
+    if duplicate_count > 0:
+        duplicate_rows = df[
+            df.duplicated(
+                subset=["comment_id"],
+                keep=False
+            )
+        ].sort_values("comment_id")
+
+        print(f"Total baris terkait duplicate : {len(duplicate_rows):,}")
+
+        same_text = (
+            duplicate_rows
+            .groupby("comment_id")["comment"]
+            .nunique(dropna=False)
+        )
+
+        different_text_count = (same_text > 1).sum()
+
+        print(
+            f"Duplicate dengan teks berbeda : "
+            f"{different_text_count:,}"
+        )
+
+        print("\nContoh duplicate:")
+
+        print(
+            duplicate_rows[
+                [
+                    "comment_id",
+                    "video_id",
+                    "comment",
+                    "is_reply"
+                ]
+            ]
+            .head(10)
+            .to_string(index=False)
+        )
+
     # MISSING VALUES
 
     print("\n[3] MISSING VALUES")
