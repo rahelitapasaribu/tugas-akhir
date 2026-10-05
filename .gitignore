@@ -1,0 +1,41 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# Dataset
+data/raw/*
+data/interim/*
+data/processed/*
+
+# Models
+models/*
+
+# Results (optional large outputs)
+results/figures/*
+results/metrics/*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep folders
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep
+!results/figures/.gitkeep
+!results/metrics/.gitkeep
