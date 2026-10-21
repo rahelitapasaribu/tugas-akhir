@@ -1,5 +1,5 @@
 """
-evaluasi haisl refinement pakai 350 komentar yang sudah di anotasi manual 
+evaluasi hasil refinement pakai 350 komentar yang sudah di anotasi manual 
 """
 from pathlib import Path
 import pandas as pd
@@ -9,7 +9,7 @@ DATA_DIR = ROOT_DIR / "data" / "interim"
 refined_path = DATA_DIR / "comments_refined.csv"
 val_path = DATA_DIR / "validate_lang.csv"
 output_path = DATA_DIR /"refinement_evaluation.csv"
-summary_path = DATA_DIR / "refinement_summary"
+summary_path = DATA_DIR / "refinement_summary.csv"
 
 def calculate_metrics(actual, predicted):
     tp = ((actual == 1) & (predicted == 1)).sum()
