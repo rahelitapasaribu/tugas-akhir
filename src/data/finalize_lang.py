@@ -18,6 +18,7 @@ NON_ID_PATH = DATA_DIR / "non_id_sample.csv"
 CANDIDATES_PATH = OUTPUT_DIR / "comments_lang_candidates.csv"
 UNRESOLVED_PATH = OUTPUT_DIR / "comments_lang_unresolved.csv"
 SUMMARY_PATH = OUTPUT_DIR / "finalize_lang_summary.csv"
+EXCLUDED_PATH = OUTPUT_DIR / "comments_lang_audited_excluded.csv"
 
 VALID_LABELS = {"id", "non_id", "uncertain"}
 
@@ -141,12 +142,50 @@ def main():
         | set(non_id["comment_id"].dropna())
     )
 
+    # Keep unreviewed and manually rejected comments separate
     unresolved = refined[
         (refined["language_candidate"] == "candidate_non_id")
         & (~refined["comment_id"].isin(audited_ids))
     ].copy()
     unresolved["language_status"] = "unreviewed_candidate_non_id"
 
+    # Preserve audited comments that were not labeled Indonesian
+    audited_non_id_or_uncertain_ids = set(
+        pd.concat([
+            review.loc[
+                review["manual_language"].isin(["non_id", "uncertain"]),
+                "comment_id"
+            ],
+            non_id.loc[
+                non_id["manual_language"].isin(["non_id", "uncertain"]),
+                "comment_id"
+            ]
+        ]).dropna()
+    )
+
+    audited_excluded = refined[
+        refined["comment_id"].isin(audited_non_id_or_uncertain_ids)
+    ].copy()
+    audited_excluded["language_status"] = "manual_non_id_or_uncertain"
+
+    # Manual audit labels take priority over automatic language candidates
+    manual_excluded_ids = set(
+        pd.concat([
+            review.loc[
+                review["manual_language"].isin(["non_id", "uncertain"]),
+                "comment_id"
+            ],
+            non_id.loc[
+                non_id["manual_language"].isin(["non_id", "uncertain"]),
+                "comment_id"
+            ]
+        ]).dropna().astype(str)
+    )
+
+    candidates = candidates[
+        ~candidates["comment_id"].astype(str).isin(manual_excluded_ids)
+    ].copy()
+    
     # Create a summary of the processing results
     summary = pd.DataFrame([
         {
@@ -183,12 +222,17 @@ def main():
     summary.to_csv(
         SUMMARY_PATH, index=False, encoding="utf-8-sig"
     )
+    audited_excluded.to_csv(
+        EXCLUDED_PATH, index=False, encoding="utf-8-sig"
+    )
 
     print("\nLanguage Finalization Summary")
     print(summary.to_string(index=False))
     print(f"\nCandidates: {CANDIDATES_PATH}")
     print(f"Unresolved: {UNRESOLVED_PATH}")
     print(f"Summary: {SUMMARY_PATH}")
+    print(f"Audited excluded: {EXCLUDED_PATH}")
+    print(f"Audited excluded rows: {len(audited_excluded)}")
 
 
 if __name__ == "__main__":
