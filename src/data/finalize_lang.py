@@ -1,30 +1,36 @@
 
 """
-Merge refined language candidates with manual language annotations.
-Input: comments_refined.csv, review_sample.csv, non_id_sample.csv
-Output: comments_lang_candidates.csv, comments_lang_unresolved.csv, finalize_lang_summary.csv
+Finalize language candidates using automatic predictions and manual audits.
+Input: comments_refined.csv and four manual language-audit CSV files.
+Output: language candidates, unresolved comments, audited exclusions, and summary CSVs.
 """
+
 from pathlib import Path
 import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT_DIR / "data" / "interim"
+INTERIM_DIR = ROOT_DIR / "data" / "interim"
 OUTPUT_DIR = ROOT_DIR / "data" / "processed"
 
-REFINED_PATH = DATA_DIR / "comments_refined.csv"
-REVIEW_PATH = DATA_DIR / "review_sample.csv"
-NON_ID_PATH = DATA_DIR / "non_id_sample.csv"
+REFINED_PATH = INTERIM_DIR / "comments_refined.csv"
+
+AUDIT_FILES = {
+    "validate_lang.csv": "manual_validation",
+    "review_sample.csv": "manual_language",
+    "non_id_sample.csv": "manual_language",
+    "id_sample.csv": "manual_language",
+}
 
 CANDIDATES_PATH = OUTPUT_DIR / "comments_lang_candidates.csv"
 UNRESOLVED_PATH = OUTPUT_DIR / "comments_lang_unresolved.csv"
-SUMMARY_PATH = OUTPUT_DIR / "finalize_lang_summary.csv"
 EXCLUDED_PATH = OUTPUT_DIR / "comments_lang_audited_excluded.csv"
+SUMMARY_PATH = OUTPUT_DIR / "finalize_lang_summary.csv"
 
 VALID_LABELS = {"id", "non_id", "uncertain"}
 
 
 def read_csv_checked(path):
-    """Read a CSV file and check that it exists."""
+    """Read a CSV file and ensure it exists."""
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
     return pd.read_csv(path, encoding="utf-8-sig")
@@ -36,181 +42,213 @@ def normalize_id(series):
 
 
 def main():
-    # Read input files
+    # Read and validate the refined comment dataset.
     refined = read_csv_checked(REFINED_PATH)
-    review = read_csv_checked(REVIEW_PATH)
-    non_id = read_csv_checked(NON_ID_PATH)
 
-    # Validate required columns
-    required_refined = {"comment_id", "language_candidate", "comment"}
-    required_audit = {"comment_id", "manual_language"}
-
-    if not required_refined.issubset(refined.columns):
+    required_columns = {
+        "comment_id",
+        "comment",
+        "language_candidate",
+    }
+    if not required_columns.issubset(refined.columns):
         raise ValueError(
-            f"comments_refined.csv must include: {required_refined}"
+            f"comments_refined.csv must include: {required_columns}"
         )
 
-    for name, df in [
-        ("review_sample.csv", review),
-        ("non_id_sample.csv", non_id),
-    ]:
-        if not required_audit.issubset(df.columns):
-            raise ValueError(
-                f"{name} must include columns: {required_audit}"
-            )
-
-    # Normalize IDs and manual labels
     refined["comment_id"] = normalize_id(refined["comment_id"])
 
-    for name, df in [
-        ("review_sample.csv", review),
-        ("non_id_sample.csv", non_id),
-    ]:
-        df["comment_id"] = normalize_id(df["comment_id"])
-        df["manual_language"] = (
-            df["manual_language"]
+    if refined["comment_id"].isna().any() or refined["comment_id"].eq("").any():
+        raise ValueError("Missing comment_id found in comments_refined.csv.")
+
+    if refined["comment_id"].duplicated().any():
+        raise ValueError("Duplicate comment_id found in comments_refined.csv.")
+
+    allowed_groups = {"candidate_id", "review", "candidate_non_id"}
+    invalid_groups = set(refined["language_candidate"].dropna()) - allowed_groups
+
+    if invalid_groups or refined["language_candidate"].isna().any():
+        raise ValueError(
+            f"Unexpected language_candidate values: {invalid_groups}"
+        )
+
+    # Load all manual audit labels.
+    audit_frames = []
+
+    for filename, label_column in AUDIT_FILES.items():
+        audit_df = read_csv_checked(INTERIM_DIR / filename)
+
+        if not {"comment_id", label_column}.issubset(audit_df.columns):
+            raise ValueError(
+                f"{filename} must include comment_id and {label_column}."
+            )
+
+        audit_df = audit_df[["comment_id", label_column]].copy()
+        audit_df = audit_df.rename(
+            columns={label_column: "manual_language"}
+        )
+        audit_df["audit_source"] = filename
+        audit_df["comment_id"] = normalize_id(audit_df["comment_id"])
+        audit_df["manual_language"] = (
+            audit_df["manual_language"]
             .astype("string")
             .str.strip()
             .str.lower()
         )
 
         invalid = (
-            df["manual_language"].isna()
-            | ~df["manual_language"].isin(VALID_LABELS)
+            audit_df["comment_id"].isna()
+            | audit_df["comment_id"].eq("")
+            | audit_df["manual_language"].isna()
+            | ~audit_df["manual_language"].isin(VALID_LABELS)
         )
 
         if invalid.any():
-            print(f"\nInvalid labels in {name}:")
-            print(
-                df.loc[
-                    invalid,
-                    ["comment_id", "manual_language"]
-                ].to_string(index=False)
-            )
-            raise ValueError(
-                f"Fix invalid manual_language labels in {name}."
-            )
+            print(f"\nInvalid audit rows in {filename}:")
+            print(audit_df.loc[invalid].to_string(index=False))
+            raise ValueError(f"Fix invalid labels in {filename}.")
 
-        if df["comment_id"].duplicated().any():
-            raise ValueError(
-                f"Duplicate comment_id found in {name}."
-            )
+        audit_frames.append(audit_df)
 
-    # Prepare initial language candidate groups
-    candidate_id = refined[
-        refined["language_candidate"] == "candidate_id"
+    all_audits = pd.concat(audit_frames, ignore_index=True)
+
+    # Ensure the same comment has consistent manual labels across audits.
+    label_counts = all_audits.groupby("comment_id")[
+        "manual_language"
+    ].nunique()
+
+    conflict_ids = label_counts[label_counts > 1].index.tolist()
+
+    if conflict_ids:
+        conflict_rows = all_audits[
+            all_audits["comment_id"].isin(conflict_ids)
+        ].sort_values(["comment_id", "audit_source"])
+
+        print("\nConflicting manual labels detected:")
+        print(conflict_rows.to_string(index=False))
+        raise ValueError(
+            "Resolve all manual-label conflicts before finalization."
+        )
+
+    # One consistent manual label per comment ID.
+    manual_labels = (
+        all_audits.drop_duplicates(subset="comment_id")
+        [["comment_id", "manual_language"]]
+        .copy()
+    )
+
+    # Attach manual labels to the refined dataset.
+    data = refined.merge(
+        manual_labels,
+        on="comment_id",
+        how="left",
+        validate="one_to_one",
+    )
+
+    # Manual labels take priority over automatic language predictions.
+    manually_confirmed_id = data["manual_language"].eq("id")
+    manually_excluded = data["manual_language"].isin(
+        ["non_id", "uncertain"]
+    )
+    unreviewed = data["manual_language"].isna()
+
+    # Comments classified as Indonesian by manual audit.
+    manual_id = data[manually_confirmed_id].copy()
+    manual_id["language_status"] = "manual_id_in_audit_sample"
+
+    # Automatic Indonesian candidates not manually audited.
+    automatic_id = data[
+        unreviewed
+        & data["language_candidate"].eq("candidate_id")
     ].copy()
-    candidate_id["language_status"] = "candidate_id"
+    automatic_id["language_status"] = "candidate_id"
 
-    review_candidates = refined[
-        refined["language_candidate"] == "review"
+    # Review-group comments not manually audited remain provisional.
+    review_candidates = data[
+        unreviewed
+        & data["language_candidate"].eq("review")
     ].copy()
     review_candidates["language_status"] = "review_not_fully_verified"
 
-    # Add only manually confirmed Indonesian comments from both audits
-    review_id_ids = set(
-        review.loc[
-            review["manual_language"] == "id", "comment_id"
-        ].dropna()
-    )
-
-    non_id_sample_id_ids = set(
-        non_id.loc[
-            non_id["manual_language"] == "id", "comment_id"
-        ].dropna()
-    )
-
-    audited_id_ids = review_id_ids | non_id_sample_id_ids
-
-    audited_id_candidates = refined[
-        refined["comment_id"].isin(audited_id_ids)
-    ].copy()
-    audited_id_candidates["language_status"] = "manual_id_in_audit_sample"
-
-    # Combine candidate groups and deduplicate by comment ID
-    candidates = pd.concat(
-        [candidate_id, review_candidates, audited_id_candidates],
-        ignore_index=True
-    )
-    candidates = candidates.drop_duplicates(
-        subset="comment_id", keep="first"
-    )
-
-    # Keep candidate_non_id comments without manual audit labels unresolved
-    audited_ids = (
-        set(review["comment_id"].dropna())
-        | set(non_id["comment_id"].dropna())
-    )
-
-    # Keep unreviewed and manually rejected comments separate
-    unresolved = refined[
-        (refined["language_candidate"] == "candidate_non_id")
-        & (~refined["comment_id"].isin(audited_ids))
+    # Unreviewed non-Indonesian predictions remain unresolved.
+    unresolved = data[
+        unreviewed
+        & data["language_candidate"].eq("candidate_non_id")
     ].copy()
     unresolved["language_status"] = "unreviewed_candidate_non_id"
 
-    # Preserve audited comments that were not labeled Indonesian
-    audited_non_id_or_uncertain_ids = set(
-        pd.concat([
-            review.loc[
-                review["manual_language"].isin(["non_id", "uncertain"]),
-                "comment_id"
-            ],
-            non_id.loc[
-                non_id["manual_language"].isin(["non_id", "uncertain"]),
-                "comment_id"
-            ]
-        ]).dropna()
+    # Manually labeled non-Indonesian or uncertain comments are excluded.
+    excluded = data[manually_excluded].copy()
+    excluded["language_status"] = "manual_non_id_or_uncertain"
+
+    # Combine all candidate groups.
+    candidates = pd.concat(
+        [manual_id, automatic_id, review_candidates],
+        ignore_index=True,
     )
 
-    audited_excluded = refined[
-        refined["comment_id"].isin(audited_non_id_or_uncertain_ids)
-    ].copy()
-    audited_excluded["language_status"] = "manual_non_id_or_uncertain"
+    # Verify that every refined comment appears in exactly one output.
+    candidate_ids = set(candidates["comment_id"].dropna())
+    unresolved_ids = set(unresolved["comment_id"].dropna())
+    excluded_ids = set(excluded["comment_id"].dropna())
 
-    # Manual audit labels take priority over automatic language candidates
-    manual_excluded_ids = set(
-        pd.concat([
-            review.loc[
-                review["manual_language"].isin(["non_id", "uncertain"]),
-                "comment_id"
-            ],
-            non_id.loc[
-                non_id["manual_language"].isin(["non_id", "uncertain"]),
-                "comment_id"
-            ]
-        ]).dropna().astype(str)
-    )
+    if candidate_ids & unresolved_ids:
+        raise ValueError("Overlap found between candidates and unresolved.")
+    if candidate_ids & excluded_ids:
+        raise ValueError("Overlap found between candidates and excluded.")
+    if unresolved_ids & excluded_ids:
+        raise ValueError("Overlap found between unresolved and excluded.")
 
-    candidates = candidates[
-        ~candidates["comment_id"].astype(str).isin(manual_excluded_ids)
-    ].copy()
-    
-    # Create a summary of the processing results
-    summary = pd.DataFrame([
+    output_ids = candidate_ids | unresolved_ids | excluded_ids
+    refined_ids = set(refined["comment_id"].dropna())
+
+    missing_ids = refined_ids - output_ids
+    unexpected_ids = output_ids - refined_ids
+
+    if missing_ids or unexpected_ids:
+        raise ValueError(
+            f"Coverage check failed: {len(missing_ids)} missing IDs, "
+            f"{len(unexpected_ids)} unexpected IDs."
+        )
+
+    # Build a summary using actual output counts.
+    summary_rows = [
         {
-            "category": "candidate_id_initial",
-            "count": len(candidate_id),
+            "category": "total_refined_comments",
+            "count": len(refined),
         },
         {
-            "category": "review_candidates",
+            "category": "manually_confirmed_id",
+            "count": len(manual_id),
+        },
+        {
+            "category": "automatic_id_not_manually_audited",
+            "count": len(automatic_id),
+        },
+        {
+            "category": "review_not_fully_verified",
             "count": len(review_candidates),
         },
         {
-            "category": "manually_confirmed_id_from_audits",
-            "count": len(audited_id_candidates),
+            "category": "total_language_candidates",
+            "count": len(candidates),
         },
         {
             "category": "unreviewed_candidate_non_id",
             "count": len(unresolved),
         },
         {
-            "category": "total_language_candidates",
-            "count": len(candidates),
+            "category": "manual_non_id_or_uncertain",
+            "count": len(excluded),
         },
-    ])
+        {
+            "category": "total_output_comments",
+            "count": len(output_ids),
+        },
+    ]
 
-    # Save outputs
+    summary = pd.DataFrame(summary_rows)
+
+    # Save all outputs.
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     candidates.to_csv(
@@ -219,20 +257,35 @@ def main():
     unresolved.to_csv(
         UNRESOLVED_PATH, index=False, encoding="utf-8-sig"
     )
+    excluded.to_csv(
+        EXCLUDED_PATH, index=False, encoding="utf-8-sig"
+    )
     summary.to_csv(
         SUMMARY_PATH, index=False, encoding="utf-8-sig"
     )
-    audited_excluded.to_csv(
-        EXCLUDED_PATH, index=False, encoding="utf-8-sig"
-    )
 
-    print("\nLanguage Finalization Summary")
+    # Print final counts and verification results.
+    print("\n=== LANGUAGE FINALIZATION SUMMARY ===")
     print(summary.to_string(index=False))
-    print(f"\nCandidates: {CANDIDATES_PATH}")
+
+    print("\n=== CANDIDATE STATUS DISTRIBUTION ===")
+    print(candidates["language_status"].value_counts().to_string())
+
+    print("\n=== COVERAGE CHECK ===")
+    print(f"Refined rows: {len(refined)}")
+    print(f"Candidate rows: {len(candidates)}")
+    print(f"Unresolved rows: {len(unresolved)}")
+    print(f"Excluded rows: {len(excluded)}")
+    print(f"Unique output IDs: {len(output_ids)}")
+    print(f"Missing IDs: {len(missing_ids)}")
+    print(f"Unexpected IDs: {len(unexpected_ids)}")
+    print("PASS: Each refined comment belongs to exactly one output group.")
+
+    print("\nOutput files:")
+    print(f"Candidates: {CANDIDATES_PATH}")
     print(f"Unresolved: {UNRESOLVED_PATH}")
+    print(f"Excluded: {EXCLUDED_PATH}")
     print(f"Summary: {SUMMARY_PATH}")
-    print(f"Audited excluded: {EXCLUDED_PATH}")
-    print(f"Audited excluded rows: {len(audited_excluded)}")
 
 
 if __name__ == "__main__":
