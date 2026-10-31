@@ -33,8 +33,11 @@ positif maupun negatif yang jelas.
 10. Pertanyaan retoris yang mengandung kritik, tuduhan, atau sindiran negatif dikategorikan sebagai Negatif.
 11. Komentar yang mengandung sentimen positif dan negatif secara bersamaan diberi label berdasarkan sentimen yang paling dominan sesuai maksud utama komentar.
 12. Sarkasme atau pujian yang digunakan untuk menyampaikan ejekan dan kritik dikategorikan sebagai Negatif.
-13. Komentar promosi, spam, atau komentar yang tidak relevan dengan topik penelitian perlu ditandai untuk ditinjau berdasarkan kriteria inklusi dan eksklusi data penelitian.
+13. Seluruh komentar yang telah dikumpulkan tetap dipertahankan dalam dataset penelitian, termasuk komentar yang berupa spam, promosi, atau kurang relevan dengan topik pembahasan.
 14. Jika maksud komentar tidak dapat ditentukan dari teks dan konteks yang tersedia, komentar dikategorikan sebagai Netral.
+15. Komentar spam, promosi, atau kurang relevan tetap diberikan satu label sentimen berdasarkan kecenderungan sentimen yang terkandung dalam komentar, yaitu Positif, Negatif, atau Netral.
+16. Kata-kata positif atau negatif yang muncul dalam komentar promosi tidak secara otomatis menentukan label sentimen. Penentuan label tetap mempertimbangkan maksud dan konteks komentar.
+17. Komentar yang tidak menunjukkan kecenderungan sentimen yang jelas terhadap objek pembahasan dikategorikan sebagai Netral.
 
 ## 4. Prioritas Penentuan Label
 - Apresiasi, dukungan, simpati, dan antusiasme: Positif.
