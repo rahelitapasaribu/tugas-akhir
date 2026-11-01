@@ -38,6 +38,9 @@ positif maupun negatif yang jelas.
 15. Komentar spam, promosi, atau kurang relevan tetap diberikan satu label sentimen berdasarkan kecenderungan sentimen yang terkandung dalam komentar, yaitu Positif, Negatif, atau Netral.
 16. Kata-kata positif atau negatif yang muncul dalam komentar promosi tidak secara otomatis menentukan label sentimen. Penentuan label tetap mempertimbangkan maksud dan konteks komentar.
 17. Komentar yang tidak menunjukkan kecenderungan sentimen yang jelas terhadap objek pembahasan dikategorikan sebagai Netral.
+18. Setiap komentar hanya boleh menghasilkan satu label, yaitu Positif, Negatif, atau Netral.
+19. Label harus ditulis secara konsisten sesuai kategori yang telah ditentukan.
+20. Jika diminta menghasilkan keluaran terstruktur, model harus mengikuti format yang ditentukan tanpa menambahkan label di luar tiga kategori tersebut.
 
 ## 4. Prioritas Penentuan Label
 - Apresiasi, dukungan, simpati, dan antusiasme: Positif.
