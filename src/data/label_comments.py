@@ -250,6 +250,7 @@ def main():
                     f"[GAGAL] comment_id: {df.at[idx, 'comment_id']}"
                 )
 
+
                 continue
 
             df.at[idx, "sentiment_qwen"] = sentiment
