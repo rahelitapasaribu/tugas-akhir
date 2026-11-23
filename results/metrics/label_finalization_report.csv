@@ -1,0 +1,2 @@
+﻿jumlah_data_input,jumlah_data_output,jumlah_keputusan_master,batch_1_target,batch_1_tercatat,batch_1_tidak_tercatat,catatan_batch_1,jumlah_comment_id_keputusan_unik,jumlah_label_qwen_dipertahankan,jumlah_label_override,jumlah_label_final_invalid,status
+10000,10000,122,25,24,1,1 keputusan Batch 1 belum tercatat; sampel tersebut memakai label Qwen jika tidak ada keputusan lain di master.,104,9896,104,0,berhasil

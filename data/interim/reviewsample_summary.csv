@@ -1,0 +1,2 @@
+﻿total_sample,evaluated_sample,uncertain_excluded,manual_id,manual_non_id,correct_fasttext,incorrect_fasttext,accuracy
+100,100,0,98,2,2,98,0.02

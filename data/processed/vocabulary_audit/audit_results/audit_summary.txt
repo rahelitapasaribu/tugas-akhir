@@ -1,0 +1,7 @@
+total_kosakata: 19434
+terindikasi_perlu_diperiksa: 3947
+tidak_terindikasi: 15487
+total_normalisasi: 208
+total_review_manual: 7112
+jumlah_kata_umum_review_manual: 40
+jumlah_review_manual_frekuensi_tinggi: 211

@@ -17,16 +17,20 @@ venv/
 .vscode/
 
 # Dataset
-data/raw/*
-data/interim/*
-data/processed/*
+# data/raw/*
+# data/interim/*
+# data/processed/*
 
 # Models
-models/*
+# models/*
+models/*.bin
+models/*.pt
+models/*.pth
+models/*.safetensors
 
 # Results (optional large outputs)
-results/figures/*
-results/metrics/*
+# results/figures/*
+# results/metrics/*
 
 # OS
 .DS_Store

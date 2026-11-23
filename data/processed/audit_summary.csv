@@ -1,0 +1,5 @@
+﻿audit_source,file,rows_in_file,labeled_rows,id,non_id,uncertain,blank_or_invalid,id_rate_excluding_uncertain
+initial_validation,validate_lang.csv,350,350,305,15,30,0,0.9531
+review_sample,review_sample.csv,100,100,98,2,0,0,0.98
+non_id_sample,non_id_sample.csv,100,100,63,26,11,0,0.7079
+id_sample,id_sample.csv,100,100,99,1,0,0,0.99

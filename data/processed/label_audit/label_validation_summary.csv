@@ -1,0 +1,7 @@
+﻿metrik,nilai
+Total sampel audit,150.0
+Divalidasi manual,48.0
+Belum divalidasi manual,102.0
+Label Qwen sesuai,7.0
+Label Qwen berbeda,41.0
+Persentase kesesuaian (%),14.58
