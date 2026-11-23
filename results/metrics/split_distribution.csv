@@ -1,0 +1,10 @@
+﻿split,label,jumlah,persentase
+train,Negatif,2341,33.44
+train,Netral,2430,34.71
+train,Positif,2229,31.84
+validation,Negatif,501,33.4
+validation,Netral,521,34.73
+validation,Positif,478,31.87
+test,Negatif,502,33.47
+test,Netral,520,34.67
+test,Positif,478,31.87
