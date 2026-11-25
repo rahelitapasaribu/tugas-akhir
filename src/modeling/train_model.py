@@ -20,15 +20,15 @@ from sklearn.metrics import (
 from model import IndoBERTClassifier, ID2LABEL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TOKENIZED_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v2"
-RESULTS_DIR = PROJECT_ROOT / "results" / "metrics_audited_v2"
+TOKENIZED_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v3"
+RESULTS_DIR = PROJECT_ROOT / "results" / "metrics_audited_v3"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 RANDOM_STATE = 42
 N_SPLITS = 5
 MAX_EPOCHS = 5
 PATIENCE = 2
-LEARNING_RATES = [1e-5, 1.5e-5]  # Diturunkan agar bobot IndoBERT tidak cepat rusak/overfit
+LEARNING_RATES = [2e-5, 3e-5]
 BATCH_SIZES = [16, 32]
 NUM_LABELS = 3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -62,6 +62,26 @@ def create_loader(input_ids, attention_mask, labels, batch_size, shuffle):
         pin_memory=DEVICE.type == "cuda",
     )
 
+def get_optimizer_grouped_parameters(model, encoder_lr, head_lr, weight_decay=0.03):
+    no_decay = ["bias", "LayerNorm.weight", "LayerNorm.bias"]
+    optimizer_grouped_parameters = []
+
+    for name, param in model.indobert.named_parameters():
+        if not param.requires_grad:
+            continue
+        wd = 0.0 if any(nd in name for nd in no_decay) else weight_decay
+        lr = encoder_lr * 0.6 if any(f"encoder.layer.{i}." in name for i in range(6)) else encoder_lr
+        optimizer_grouped_parameters.append({"params": [param], "lr": lr, "weight_decay": wd})
+
+    for module in [model.layer_pooler, model.layer_norm, model.classifier]:
+        for name, param in module.named_parameters():
+            if not param.requires_grad:
+                continue
+            wd = 0.0 if any(nd in name for nd in no_decay) else weight_decay
+            optimizer_grouped_parameters.append({"params": [param], "lr": head_lr, "weight_decay": wd})
+
+    return optimizer_grouped_parameters
+
 def evaluate(model, loader, criterion):
     model.eval()
     total_loss = 0.0
@@ -86,7 +106,7 @@ def evaluate(model, loader, criterion):
     all_probs = np.vstack(all_probs)
     all_preds = np.argmax(all_probs, axis=1)
 
-    metrics = {
+    return {
         "val_loss": total_loss / len(loader),
         "accuracy": accuracy_score(all_labels, all_preds),
         "precision_macro": precision_score(all_labels, all_preds, average="macro", zero_division=0),
@@ -96,7 +116,6 @@ def evaluate(model, loader, criterion):
         "preds": all_preds,
         "labels": np.array(all_labels),
     }
-    return metrics
 
 def train_one_fold(input_ids, attention_mask, labels, train_idx, val_idx, lr, batch_size, fold_num):
     set_seed(RANDOM_STATE + fold_num)
@@ -104,13 +123,9 @@ def train_one_fold(input_ids, attention_mask, labels, train_idx, val_idx, lr, ba
     train_loader = create_loader(input_ids[train_idx], attention_mask[train_idx], labels[train_idx], batch_size, True)
     val_loader = create_loader(input_ids[val_idx], attention_mask[val_idx], labels[val_idx], batch_size, False)
 
-    model = IndoBERTClassifier(num_labels=NUM_LABELS, dropout_rate=0.25).to(DEVICE)
-
-    # Label smoothing mencegah model overconfident & meredam lonjakan val_loss
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-
-    # Weight decay lebih kuat (0.05) untuk regularisasi
-    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=0.05)
+    model = IndoBERTClassifier(num_labels=NUM_LABELS, dropout_rate=0.2).to(DEVICE)
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.03)
+    optimizer = AdamW(get_optimizer_grouped_parameters(model, encoder_lr=lr, head_lr=1e-4, weight_decay=0.03))
 
     total_steps = len(train_loader) * MAX_EPOCHS
     scheduler = get_cosine_schedule_with_warmup(
@@ -190,7 +205,7 @@ def main():
 
     for exp_num, (lr, batch_size) in enumerate(experiments, start=1):
         print("\n" + "=" * 60)
-        print(f"EXPERIMENT {exp_num}/{len(experiments)} | LR: {lr} | Batch Size: {batch_size}")
+        print(f"EXPERIMENT {exp_num}/{len(experiments)} | Encoder LR: {lr} | Head LR: 1e-4 | Batch Size: {batch_size}")
         print("=" * 60)
 
         oof_probs = np.zeros((len(label_array), NUM_LABELS))
@@ -237,7 +252,6 @@ def main():
                 "prob_Netral": oof_probs[:, 1],
                 "prob_Positif": oof_probs[:, 2],
             })
-            # Hitung probabilitas yang diberikan model untuk label asli (semakin kecil = semakin besar kemungkinan salah label)
             best_oof_df["true_label_prob"] = [
                 oof_probs[idx, true_cls] for idx, true_cls in enumerate(label_array)
             ]

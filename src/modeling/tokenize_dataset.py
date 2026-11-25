@@ -1,13 +1,5 @@
 """
-Melakukan tokenisasi dataset hasil audit v2 menggunakan tokenizer IndoBERT.
-
-Input:
-data/processed/splits/train_audited_v2.csv
-data/processed/splits/validation_audited_v2.csv
-data/processed/splits/test.csv
-
-Output:
-data/processed/tokenized_audited_v2/
+Melakukan tokenisasi dataset hasil audit v3 + context enrichment menggunakan tokenizer IndoBERT.
 """
 from pathlib import Path
 import json
@@ -18,7 +10,7 @@ from transformers import AutoTokenizer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INPUT_DIR = PROJECT_ROOT / "data" / "processed" / "splits"
-OUTPUT_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v2"
+OUTPUT_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v3"
 
 MODEL_NAME = "indobenchmark/indobert-base-p1"
 MAX_LENGTH = 160
@@ -30,8 +22,8 @@ ID_COLUMN = "comment_id"
 
 LABEL2ID = {"Negatif": 0, "Netral": 1, "Positif": 2}
 SPLIT_FILES = {
-    "train": "train_audited_v2.csv",
-    "validation": "validation_audited_v2.csv",
+    "train": "train_audited_v3.csv",
+    "validation": "validation_audited_v3.csv",
     "test": "test.csv",
 }
 
@@ -40,6 +32,11 @@ def clean_minimal(text: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+def build_context(row) -> str:
+    title = clean_minimal(row[TITLE_COLUMN]) if pd.notna(row[TITLE_COLUMN]) else ""
+    reply_tag = "Balasan" if str(row.get("is_reply", False)).lower() == "true" else "Komentar Utama"
+    return f"{reply_tag} | {title}"
+
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -47,11 +44,11 @@ def main():
     for split, filename in SPLIT_FILES.items():
         df = pd.read_csv(INPUT_DIR / filename)
 
-        titles = df[TITLE_COLUMN].fillna("").apply(clean_minimal).tolist()
+        contexts = df.apply(build_context, axis=1).tolist()
         comments = df[TEXT_COLUMN].fillna("").apply(clean_minimal).tolist()
 
         encoded = tokenizer(
-            titles,
+            contexts,
             comments,
             padding="max_length",
             truncation="only_second",
