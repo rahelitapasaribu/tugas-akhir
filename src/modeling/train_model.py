@@ -20,8 +20,8 @@ from sklearn.metrics import (
 from model import IndoBERTClassifier, ID2LABEL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TOKENIZED_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized"
-RESULTS_DIR = PROJECT_ROOT / "results" / "metrics"
+TOKENIZED_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v2"
+RESULTS_DIR = PROJECT_ROOT / "results" / "metrics_audited_v2"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 RANDOM_STATE = 42

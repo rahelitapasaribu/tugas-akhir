@@ -1,13 +1,13 @@
 """
-Melakukan tokenisasi dataset menggunakan tokenizer IndoBERT.
+Melakukan tokenisasi dataset hasil audit v2 menggunakan tokenizer IndoBERT.
 
 Input:
-data/processed/splits/train.csv
-data/processed/splits/validation.csv
+data/processed/splits/train_audited_v2.csv
+data/processed/splits/validation_audited_v2.csv
 data/processed/splits/test.csv
 
 Output:
-data/processed/tokenized/
+data/processed/tokenized_audited_v2/
 """
 from pathlib import Path
 import json
@@ -18,21 +18,24 @@ from transformers import AutoTokenizer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INPUT_DIR = PROJECT_ROOT / "data" / "processed" / "splits"
-OUTPUT_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized"
+OUTPUT_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v2"
 
 MODEL_NAME = "indobenchmark/indobert-base-p1"
-MAX_LENGTH = 160  # Dinaikkan dari 128 agar judul + komentar panjang tidak terpotong
+MAX_LENGTH = 160
 
 TITLE_COLUMN = "video_title"
-TEXT_COLUMN = "comment_original"  # Gunakan teks natural (cased) agar emosi dari kapitalisasi/emoji terjaga
+TEXT_COLUMN = "comment_original"
 LABEL_COLUMN = "label_final"
 ID_COLUMN = "comment_id"
 
 LABEL2ID = {"Negatif": 0, "Netral": 1, "Positif": 2}
-SPLITS = ["train", "validation", "test"]
+SPLIT_FILES = {
+    "train": "train_audited_v2.csv",
+    "validation": "validation_audited_v2.csv",
+    "test": "test.csv",
+}
 
 def clean_minimal(text: str) -> str:
-    # Hapus karakter tak terlihat (zero-width space) dan spasi/newline berlebih saja
     text = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", str(text))
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -41,8 +44,8 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-    for split in SPLITS:
-        df = pd.read_csv(INPUT_DIR / f"{split}.csv")
+    for split, filename in SPLIT_FILES.items():
+        df = pd.read_csv(INPUT_DIR / filename)
 
         titles = df[TITLE_COLUMN].fillna("").apply(clean_minimal).tolist()
         comments = df[TEXT_COLUMN].fillna("").apply(clean_minimal).tolist()
@@ -51,7 +54,7 @@ def main():
             titles,
             comments,
             padding="max_length",
-            truncation="only_second",  # Hanya potong komentar jika melebihi max_length
+            truncation="only_second",
             max_length=MAX_LENGTH,
             return_tensors="pt",
         )
@@ -66,7 +69,7 @@ def main():
         }
 
         torch.save(tokenized_data, OUTPUT_DIR / f"{split}.pt")
-        print(f"{split}: {len(df)} data berhasil ditokenisasi.")
+        print(f"{split} ({filename}): {len(df)} data berhasil ditokenisasi.")
 
     tokenizer.save_pretrained(OUTPUT_DIR / "tokenizer")
     with open(OUTPUT_DIR / "label_mapping.json", "w") as f:
