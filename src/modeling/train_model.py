@@ -20,19 +20,22 @@ from sklearn.metrics import (
 from model import IndoBERTClassifier, ID2LABEL
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TOKENIZED_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v3"
-RESULTS_DIR = PROJECT_ROOT / "results" / "metrics_audited_v3"
+TOKENIZED_DIR = PROJECT_ROOT / "data" / "processed" / "tokenized_audited_v3_large"
+RESULTS_DIR = PROJECT_ROOT / "results" / "metrics_audited_v3_norm"
+CHECKPOINT_DIR = PROJECT_ROOT / "models" / "indobert_base_5fold"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 RANDOM_STATE = 42
 N_SPLITS = 5
 MAX_EPOCHS = 5
 PATIENCE = 2
-LEARNING_RATES = [2e-5, 3e-5]
-BATCH_SIZES = [16, 32]
+LEARNING_RATES = [2e-5]
+BATCH_SIZES = [32]
 NUM_LABELS = 3
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 USE_AMP = DEVICE.type == "cuda"
+
 
 def set_seed(seed=RANDOM_STATE):
     random.seed(seed)
@@ -40,6 +43,7 @@ def set_seed(seed=RANDOM_STATE):
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
 
 def load_tokenized_data():
     train_data = torch.load(TOKENIZED_DIR / "train.pt", map_location="cpu", weights_only=True)
@@ -52,6 +56,7 @@ def load_tokenized_data():
 
     return input_ids, attention_mask, labels, comment_ids
 
+
 def create_loader(input_ids, attention_mask, labels, batch_size, shuffle):
     dataset = TensorDataset(input_ids, attention_mask, labels)
     return DataLoader(
@@ -61,6 +66,7 @@ def create_loader(input_ids, attention_mask, labels, batch_size, shuffle):
         num_workers=0,
         pin_memory=DEVICE.type == "cuda",
     )
+
 
 def get_optimizer_grouped_parameters(model, encoder_lr, head_lr, weight_decay=0.03):
     no_decay = ["bias", "LayerNorm.weight", "LayerNorm.bias"]
@@ -81,6 +87,7 @@ def get_optimizer_grouped_parameters(model, encoder_lr, head_lr, weight_decay=0.
             optimizer_grouped_parameters.append({"params": [param], "lr": head_lr, "weight_decay": wd})
 
     return optimizer_grouped_parameters
+
 
 def evaluate(model, loader, criterion):
     model.eval()
@@ -117,6 +124,7 @@ def evaluate(model, loader, criterion):
         "labels": np.array(all_labels),
     }
 
+
 def train_one_fold(input_ids, attention_mask, labels, train_idx, val_idx, lr, batch_size, fold_num):
     set_seed(RANDOM_STATE + fold_num)
 
@@ -139,6 +147,7 @@ def train_one_fold(input_ids, attention_mask, labels, train_idx, val_idx, lr, ba
     best_f1 = -1.0
     best_metrics = None
     best_epoch = 0
+    best_state = None
     patience_counter = 0
 
     for epoch in range(1, MAX_EPOCHS + 1):
@@ -159,9 +168,11 @@ def train_one_fold(input_ids, attention_mask, labels, train_idx, val_idx, lr, ba
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            old_scale = scaler.get_scale()
             scaler.step(optimizer)
             scaler.update()
-            scheduler.step()
+            if scaler.get_scale() >= old_scale:
+                scheduler.step()
 
             total_train_loss += loss.item()
 
@@ -178,6 +189,7 @@ def train_one_fold(input_ids, attention_mask, labels, train_idx, val_idx, lr, ba
             best_f1 = val_metrics["f1_macro"]
             best_metrics = val_metrics
             best_epoch = epoch
+            best_state = {k: v.cpu() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
             patience_counter += 1
@@ -190,7 +202,8 @@ def train_one_fold(input_ids, attention_mask, labels, train_idx, val_idx, lr, ba
     if DEVICE.type == "cuda":
         torch.cuda.empty_cache()
 
-    return best_epoch, best_metrics
+    return best_epoch, best_metrics, best_state
+
 
 def main():
     set_seed()
@@ -205,19 +218,22 @@ def main():
 
     for exp_num, (lr, batch_size) in enumerate(experiments, start=1):
         print("\n" + "=" * 60)
-        print(f"EXPERIMENT {exp_num}/{len(experiments)} | Encoder LR: {lr} | Head LR: 1e-4 | Batch Size: {batch_size}")
+        print(f"EXPERIMENT {exp_num}/{len(experiments)} | IndoBERT-Base + Dict115 | Encoder LR: {lr} | Batch Size: {batch_size}")
         print("=" * 60)
 
         oof_probs = np.zeros((len(label_array), NUM_LABELS))
         fold_summaries = []
+        fold_states = {}
 
         for fold_num, (train_idx, val_idx) in enumerate(skf.split(np.zeros(len(label_array)), label_array), start=1):
             print(f"\nMemulai Fold {fold_num}/{N_SPLITS}")
-            best_epoch, best_metrics = train_one_fold(
+            best_epoch, best_metrics, best_state = train_one_fold(
                 input_ids, attention_mask, labels, train_idx, val_idx, lr, batch_size, fold_num
             )
             oof_probs[val_idx] = best_metrics["probs"]
+            fold_states[fold_num] = best_state
             fold_summaries.append({
+                "fold": fold_num,
                 "best_epoch": best_epoch,
                 "accuracy": best_metrics["accuracy"],
                 "precision_macro": best_metrics["precision_macro"],
@@ -228,14 +244,16 @@ def main():
         oof_preds = np.argmax(oof_probs, axis=1)
         oof_f1 = f1_score(label_array, oof_preds, average="macro")
 
-        print(f"\n[OOF Classification Report - Exp {exp_num}]")
+        print(f"\n[OOF Classification Report - IndoBERT-Base + Dict115]")
         print(classification_report(label_array, oof_preds, target_names=["Negatif", "Netral", "Positif"], digits=4))
 
         df_sum = pd.DataFrame(fold_summaries)
+        df_sum.to_csv(RESULTS_DIR / "cv_fold_results.csv", index=False)
         summary = {
             "experiment": exp_num,
             "learning_rate": lr,
             "batch_size": batch_size,
+            "mean_accuracy": df_sum["accuracy"].mean(),
             "mean_f1_macro": df_sum["f1_macro"].mean(),
             "oof_f1_macro": oof_f1,
             "mean_best_epoch": df_sum["best_epoch"].mean(),
@@ -244,6 +262,9 @@ def main():
 
         if oof_f1 > best_overall_f1:
             best_overall_f1 = oof_f1
+            for f_idx, state in fold_states.items():
+                torch.save(state, CHECKPOINT_DIR / f"best_fold_{f_idx}.pt")
+
             best_oof_df = pd.DataFrame({
                 "comment_id": comment_ids,
                 "true_label": [ID2LABEL[i] for i in label_array],
@@ -258,7 +279,8 @@ def main():
 
     pd.DataFrame(experiment_results).to_csv(RESULTS_DIR / "hyperparameter_results.csv", index=False)
     best_oof_df.to_csv(RESULTS_DIR / "oof_predictions.csv", index=False)
-    print("\nSelesai! File OOF predictions disimpan di:", RESULTS_DIR / "oof_predictions.csv")
+    print("\nSelesai! Checkpoints disimpan di:", CHECKPOINT_DIR)
+
 
 if __name__ == "__main__":
     main()

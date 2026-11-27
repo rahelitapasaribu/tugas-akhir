@@ -1,0 +1,4 @@
+,Pred_Negatif,Pred_Netral,Pred_Positif
+True_Negatif,391,88,23
+True_Netral,135,310,75
+True_Positif,22,52,404

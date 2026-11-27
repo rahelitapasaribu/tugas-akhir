@@ -1,0 +1,2 @@
+experiment,learning_rate,batch_size,mean_accuracy,mean_f1_macro,oof_f1_macro,mean_best_epoch
+1,2e-05,32,0.8245882352941176,0.8223284787620269,0.8223092827956754,4.2

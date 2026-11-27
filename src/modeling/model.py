@@ -1,5 +1,5 @@
 """
-Arsitektur Enhanced Transformer Classifier dengan Weighted Layer Pooling,
+Arsitektur Fine-Tuned IndoBERT (Base) dengan Weighted Layer Pooling,
 Concatenated Mean-Max Pooling, dan Multi-Sample Dropout.
 """
 import torch
@@ -25,7 +25,7 @@ class WeightedLayerPooling(nn.Module):
 
 
 class IndoBERTClassifier(nn.Module):
-    """Enhanced Classifier dengan Weighted Layer Pooling, Mean-Max Pooling, & Multi-Sample Dropout."""
+    """Fine-Tuned IndoBERT Classifier dengan Weighted Layer Pooling & Mean-Max Pooling."""
 
     def __init__(self, model_name=MODEL_NAME, num_labels=3, dropout_rate=0.2):
         super().__init__()
@@ -49,22 +49,16 @@ class IndoBERTClassifier(nn.Module):
             attention_mask=attention_mask
         )
 
-        # 1. Gabungkan 4 layer terakhir dengan bobot terlatih
         sequence_output = self.layer_pooler(outputs.hidden_states)
 
-        # 2. Mean Pooling
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(sequence_output.size()).float()
         sum_embeddings = torch.sum(sequence_output * input_mask_expanded, dim=1)
         sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
         mean_pooled = sum_embeddings / sum_mask
 
-        # 3. Max Pooling
         sequence_masked = sequence_output.masked_fill(input_mask_expanded == 0, -1e9)
         max_pooled = torch.max(sequence_masked, dim=1)[0]
 
-        # 4. Gabungkan Mean + Max Pooling + LayerNorm
         pooled_output = self.layer_norm(torch.cat([mean_pooled, max_pooled], dim=1))
-
-        # 5. Multi-Sample Dropout
         logits = sum([self.classifier(dp(pooled_output)) for dp in self.dropouts]) / len(self.dropouts)
         return logits
