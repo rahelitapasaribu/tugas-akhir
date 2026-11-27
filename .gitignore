@@ -45,3 +45,5 @@ Thumbs.db
 !results/metrics/.gitkeep
 models/indobert_base_5fold/
 data/processed/tokenized_audited_v3_norm/
+
+data/processed/tokenized*/
