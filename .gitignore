@@ -53,3 +53,8 @@ data/processed/tokenized*/
 
 models/
 data/processed/tokenized*/
+
+*.pt
+*.bin
+*.safetensors
+*checkpoint*

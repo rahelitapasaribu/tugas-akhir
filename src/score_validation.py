@@ -6,7 +6,7 @@ L={'Negatif':0,'Netral':1,'Positif':2}; IL={v:k for k,v in L.items()}
 def wilson(k,n,z=1.96):
     if n==0: return (np.nan,np.nan)
     p=k/n; d=1+z*z/n; c=(p+z*z/(2*n))/d; h=z*np.sqrt(p*(1-p)/n+z*z/(4*n*n))/d; return c-h,c+h
-sh=pd.read_csv(f'{A}/validation_blind_sheet.csv'); key=pd.read_csv(f'{A}/validation_blind_key.csv'); d=sh.merge(key,on='blind_id')
+sh=pd.read_csv(f'{A}/validation_blind_sheet_filled.csv'); key=pd.read_csv(f'{A}/validation_blind_key.csv'); d=sh.merge(key,on='blind_id')
 d=d[d.label_anotator1.isin(L)].copy()
 two=d.label_anotator2.isin(L)
 if two.sum()>=30: print('Cohen kappa (n=%d): %.3f'%(two.sum(),cohen_kappa_score(d[two].label_anotator1,d[two].label_anotator2)))
